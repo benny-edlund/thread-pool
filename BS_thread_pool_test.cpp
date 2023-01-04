@@ -186,7 +186,7 @@ BS::concurrency_t count_unique_threads()
             {
                 id = std::this_thread::get_id();
                 {
-                    const std::scoped_lock total_lock_local(total_mutex);
+                    std::unique_lock<std::mutex> total_lock_local(total_mutex);
                     ++total_count;
                 }
                 total_cv.notify_one();
@@ -195,7 +195,7 @@ BS::concurrency_t count_unique_threads()
             });
     total_cv.wait(total_lock, [&total_count] { return total_count == pool.get_thread_count(); });
     {
-        const std::scoped_lock ID_lock(ID_mutex);
+        std::unique_lock<std::mutex> ID_lock(ID_mutex);
         ID_release = true;
     }
     ID_cv.notify_all();
@@ -204,6 +204,20 @@ BS::concurrency_t count_unique_threads()
     std::sort(thread_IDs.begin(), thread_IDs.end());
     return static_cast<BS::concurrency_t>(std::unique(thread_IDs.begin(), thread_IDs.end()) - thread_IDs.begin());
 }
+
+
+void check_bs_invoke_result_t()
+{
+    static_assert( std::is_same< bs_invoke_result_t< int(*)() >, int>::value, "check_bs_invoke_result_t() failed on int");
+    static_assert( std::is_same< bs_invoke_result_t< void(*)() >, void>::value, "check_bs_invoke_result_t() failed on void");
+}
+
+void check_bs_is_void_v()
+{
+    static_assert( bs_is_void_v<void>, "bs_is_void_v failed");
+    static_assert( bs_is_void_v< bs_invoke_result_t< void(*)() > >, "bs_is_void_v failed on invoke_result_t");
+}
+
 
 /**
  * @brief Check that the constructor works.
@@ -620,7 +634,7 @@ void check_task_monitoring()
     dual_println("Resetting pool to ", n, " threads.");
     pool.reset(n);
     dual_println("Submitting ", n * 3, " tasks.");
-    std::unique_ptr<std::atomic<bool>[]> release = std::make_unique<std::atomic<bool>[]>(n * 3);
+    std::unique_ptr<std::atomic<bool>[]> release = std::make_unique<std::atomic<bool>[]>(static_cast<size_t>(n) * 3);
     for (BS::concurrency_t i = 0; i < n * 3; ++i)
         pool.push_task(
             [&release, i]
@@ -634,14 +648,14 @@ void check_task_monitoring()
 
     dual_println("After submission, should have: ", n * 3, " tasks total, ", n, " tasks running, ", n * 2, " tasks queued...");
     dual_print("Result: ", pool.get_tasks_total(), " tasks total, ", pool.get_tasks_running(), " tasks running, ", pool.get_tasks_queued(), " tasks queued ");
-    check(pool.get_tasks_total() == n * 3 && pool.get_tasks_running() == n && pool.get_tasks_queued() == n * 2);
+    check(pool.get_tasks_total() == static_cast<size_t>(n) * 3 && pool.get_tasks_running() == n && pool.get_tasks_queued() == static_cast<size_t>(n) * 2);
     for (BS::concurrency_t i = 0; i < n; ++i)
         release[i] = true;
     std::this_thread::sleep_for(sleep_time);
 
     dual_println("After releasing ", n, " tasks, should have: ", n * 2, " tasks total, ", n, " tasks running, ", n, " tasks queued...");
     dual_print("Result: ", pool.get_tasks_total(), " tasks total, ", pool.get_tasks_running(), " tasks running, ", pool.get_tasks_queued(), " tasks queued ");
-    check(pool.get_tasks_total() == n * 2 && pool.get_tasks_running() == n && pool.get_tasks_queued() == n);
+    check(pool.get_tasks_total() == static_cast<size_t>(n) * 2 && pool.get_tasks_running() == n && pool.get_tasks_queued() == n);
     for (BS::concurrency_t i = n; i < n * 2; ++i)
         release[i] = true;
     std::this_thread::sleep_for(sleep_time);
@@ -686,12 +700,12 @@ void check_pausing()
 
     dual_println("Immediately after submission, should have: ", n * 3, " tasks total, ", 0, " tasks running, ", n * 3, " tasks queued...");
     dual_print("Result: ", pool.get_tasks_total(), " tasks total, ", pool.get_tasks_running(), " tasks running, ", pool.get_tasks_queued(), " tasks queued ");
-    check(pool.get_tasks_total() == n * 3 && pool.get_tasks_running() == 0 && pool.get_tasks_queued() == n * 3);
+    check(pool.get_tasks_total() == static_cast<size_t>(n) * 3 && pool.get_tasks_running() == 0 && pool.get_tasks_queued() == static_cast<size_t>(n) * 3);
     std::this_thread::sleep_for(std::chrono::milliseconds(300));
 
     dual_println("300ms later, should still have: ", n * 3, " tasks total, ", 0, " tasks running, ", n * 3, " tasks queued...");
     dual_print("Result: ", pool.get_tasks_total(), " tasks total, ", pool.get_tasks_running(), " tasks running, ", pool.get_tasks_queued(), " tasks queued ");
-    check(pool.get_tasks_total() == n * 3 && pool.get_tasks_running() == 0 && pool.get_tasks_queued() == n * 3);
+    check(pool.get_tasks_total() == static_cast<size_t>(n) * 3 && pool.get_tasks_running() == 0 && pool.get_tasks_queued() == static_cast<size_t>(n) * 3);
     dual_println("Unpausing pool.");
     pool.unpause();
     dual_println("Checking that the pool correctly reports that it is not paused.");
@@ -700,7 +714,7 @@ void check_pausing()
 
     dual_println("300ms later, should have: ", n * 2, " tasks total, ", n, " tasks running, ", n, " tasks queued...");
     dual_print("Result: ", pool.get_tasks_total(), " tasks total, ", pool.get_tasks_running(), " tasks running, ", pool.get_tasks_queued(), " tasks queued ");
-    check(pool.get_tasks_total() == n * 2 && pool.get_tasks_running() == n && pool.get_tasks_queued() == n);
+    check(pool.get_tasks_total() == static_cast<size_t>(n) * 2 && pool.get_tasks_running() == n && pool.get_tasks_queued() == n);
     dual_println("Pausing pool and using wait_for_tasks() to wait for the running tasks.");
     pool.pause();
     pool.wait_for_tasks();
